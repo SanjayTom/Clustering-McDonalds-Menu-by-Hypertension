@@ -1,0 +1,256 @@
+---
+title: "Clustering McDonald's Menu food fact"
+output: html_notebook
+---
+
+# Introduction
+Mcdonalds is the biggest fast food chain in the world and had a multitude of different items on its menu. All of these menu items come with a multitude of caloric information that should be better conveyed to the average consumer of such products.
+
+For this analysis I would like to get a more in-depth look at the mcdonalds menu and figure out which items you should avoid if you want to reduce the risk of hypertension. This is important since the almost half of adults in the US have hypertenison according to the cdc.[Report Link](https://www.cdc.gov/bloodpressure/facts.htm) The availability of fast foods, fatty food, and other unhealthy snacks in the living environment of children is assumed to contribute to be a very biggest reason of obesity among children.  (1) the clustering of food facts in the overall menu (2) the influence of particular food item in mac's big menu on children. McDonald menu consist of breakfasts and fast food like burgers and sandwiches and I would like to compare it with respect to the content of food and quality.I want to know the  good and bad aspects of McDonald's most famous menu items - like the Mc Nuggets, Big Mac, Filet-O-Fish, and McChicken
+
+
+```{r}
+#Load libraries
+library(cluster)
+library(ggplot2)
+library(dendextend)
+library(dplyr)
+library(datasets)
+library(NbClust)
+library(heatmaply)
+library(kohonen)
+library(party)
+
+menudata <-  read.csv('https://raw.githubusercontent.com/reisanar/datasets/master/macmenu.csv')
+
+# data class
+class(menudata)
+
+```
+
+# Exploratory Data Analysis (EDA)
+
+
+```{r}
+head(menudata)
+
+#summary of the dataset
+summary(menudata)
+str(menudata)
+
+```
+
+```{r}
+#study the nutitional fact about each catagory
+Food_content = aggregate(cbind(Total.Fat....Daily.Value., Saturated.Fat....Daily.Value., Cholesterol....Daily.Value., Sodium....Daily.Value., Carbohydrates....Daily.Value., Dietary.Fiber....Daily.Value.,Vitamin.A....Daily.Value., Vitamin.C....Daily.Value.,Calcium....Daily.Value., Iron....Daily.Value.) ~ Category,
+                               data = menudata, FUN = mean
+)
+
+Food_content
+(Food_content$Total.Fat....Daily.Value.)
+
+```
+
+Preliminary Analysis: 
+
+By performing the aggregation of the content values across the menu category wise, I get to know that:
+
+1.	 The breakfast menu  is the category that has highest percentage of fat, cholesterol, sodium and saturated fat. In addition to that their breakfast items are very low in percentage of vitamins and dietary fibers.
+2. 	On the second-place Beef and pork items in the menu can satisfy 38% of the daily value of fat and 42 % of daily value of sodium. In other words , this means a single item of "Beef & Pork" can  provide daily recommended fat consumption by this amount.
+3. Salads in the menu is the category that can satisfy 146 % of your daily recommended Vitamin A consumption.
+4. 	Smoothies & shakes provide  35 % of your daily overall calcium recommended consumption .
+
+
+## Data Cleaning
+
+```{r}
+#Let's clean the data to perform clustering
+# Delete first column
+menudata$Category <-NULL
+View(menudata)
+```
+
+Step 2: With the remaining 23 columns, we still have 2 more character variables Items and serving size. Setting these two variables into numeric to check if there are any NA's in the dataset.
+
+
+```{r}
+# First convert column 2 to numeric
+menudata[, 2] <-lapply(menudata[,2], as.numeric)
+str(menudata)
+
+```
+.
+
+```{r}
+# Select Product Data Subset that has less than 25 NA's
+menuDataSubset <- menudata[rowSums(is.na(menudata))<25,]
+summary(menuDataSubset)
+head(menuDataSubset)
+
+# Remove duplicates
+CleanMenuData <- menuDataSubset %>% distinct(Item , .keep_all = TRUE)
+
+head(CleanMenuData)
+hist(CleanMenuData$Calories)
+qqnorm(CleanMenuData$Calories)
+qqline(CleanMenuData$Calories)
+hist(CleanMenuData$Cholesterol)
+
+# Set NA's to zero
+CleanMenuData[is.na(CleanMenuData)] <- 0
+head(CleanMenuData)
+```
+
+
+```{r}
+# Set item as row names
+rownames(CleanMenuData) <- CleanMenuData[,1]
+
+# Delete column "Item".
+CleanMenuData$Item <- NULL
+summary(CleanMenuData)
+View(CleanMenuData)
+
+# Scale the data
+ScaledMenuData <- scale(CleanMenuData, center = FALSE)
+ScaledMenuData[is.na(ScaledMenuData)] <- 0
+```
+
+After cleaning the data, I found that the data is skewed on the right-hand side having highest frequency of items with low calorie amount.
+
+```{r}
+hist(ScaledMenuData)
+```
+
+
+# Methods
+
+## K-Means Cluystering :
+
+
+```{r}
+# Clustering with different algorithms
+
+#Best number of cluster for the data
+bestK <- NbClust(ScaledMenuData, min.nc=2, max.nc=5,index = "kl", method="kmeans")
+bestK$Best.nc
+#bestK$Best.partition
+head(CleanMenuData)
+```
+
+Performing K means with K= 15 and K= 5 on data with respect to calories from fat and overall calories.
+Elbow plot: Plotting a elbow plot Within groups sum of squares with K=5 . This represents the variance within the clusters. It decreases as k increases, but one can notice a bend (or "elbow") right at k=4. This shows that indicates that additional clusters beyond the fourth have little value.
+
+```{r}
+#Elbow in the resulting plot suggests a suitable number of clusters for the kmeans.
+
+wgss <- (nrow(ScaledMenuData)-1)*sum(apply(ScaledMenuData,2,var))
+for (i in 2:5) wgss[i] <- sum(kmeans(ScaledMenuData,
+                                      centers=i)$withinss)
+#Plot elbow model showing 3 numbers of  clusters
+plot(1:5, wgss, type="b", xlab="Number of Clusters",
+     ylab="Within groups sum of squares")
+```
+
+
+
+## Clustering Algorithms: K-means
+
+Since  my focus is mainly on variable Calories from Fat, Cholesterol and Sodium in McDonald's menu items as it affect children.
+
+
+```{r}
+#Kmeans clustering by setting 5 clusters
+set.seed(20)
+menuKCluster1 <- kmeans(CleanMenuData[, 3:4], 5, nstart = 20)
+menuKCluster1
+menuKCluster1$size
+menuKCluster1$centers
+menuKCluster1$cluster <- as.factor(menuKCluster1$cluster)
+ggplot(CleanMenuData, aes(Calories, Calories.from.Fat, color = menuKCluster1$cluster), environment=environment()) + geom_point()
+
+```
+
+  Best value for cluster is 4 that is validated with elbow graph as well as above scatterplots. The one dot on the right hand top corner in both the cluster plot is an item " 40 piece mac Nuggets in the menu that has highest amount of cholesterol , fat and sodium.
+
+Findings from the plot: 
+
+1. Highest number of Calories from fat is in Chicken Mc Nuggets (40 piece)
+2. Items with calories more than 500 calories are scattered and very less in numbers. 
+3. The calories and calorie from fat is positively correlated.
+4. Clusters are very distinct as the calories and calories from fat increases another group has been formed.
+
+```{r}
+# Kmeans with best number of cluster i;e 4 clusters
+set.seed(20)
+menuKCluster2 <- kmeans(CleanMenuData[ , 3:4], 4, nstart = 20)
+menuKCluster2
+menuKCluster2$size
+menuKCluster2$centers
+menuKCluster2$cluster <- as.factor(menuKCluster2$cluster)
+ggplot(CleanMenuData, aes(Calories, Calories.from.Fat, color = menuKCluster2$cluster), environment=environment()) + geom_point()
+
+```
+Furthermore, mining the data with respect to other alarming contents like Cholesterol and sodium also , I will explore k clusters , from 1 to 9, on this clustering. First cluster the data 9 times, each time different k and see how the distribution of clusters takes place each time.
+
+```{r}
+library(broom)
+#Explore k, from 1 to 9, on this clustering. First cluster the data 9 times, each time different k
+kclusts <- data.frame(k=1:9) %>% group_by(k) %>% do(kclust=kmeans(ScaledMenuData, .$k))
+
+# Tidy the clusterings using augment and glance 
+assignments <- kclusts %>% group_by(k) %>% do(augment(.$kclust[[1]], ScaledMenuData))
+clusterings <- kclusts %>% group_by(k) %>% do(glance(.$kclust[[1]]))
+```
+
+
+## Tidying the Clusters
+
+
+```{r}
+# plot the original points, with each point colored according to the original cluster
+p1 <- ggplot(assignments, aes(Calories, Calories.from.Fat, color = menuKCluster$cluster)) + geom_point(aes(color=.cluster)) + facet_wrap(~ k)
+p1
+
+```
+
+```{r}
+p2 <- ggplot(assignments, aes(Calories, Cholesterol, color = menuKCluster$cluster)) + geom_point(aes(color=.cluster)) + facet_wrap(~ k)
+p2
+```
+
+
+```{r}
+p3 <- ggplot(assignments, aes(Calories, Sodium, color = menuKCluster$cluster)) + geom_point(aes(color=.cluster)) + facet_wrap(~ k)
+p3
+```
+
+
+```{r}
+ggplot(clusterings, aes(k, tot.withinss)) + geom_line()
+```
+
+The MacDonald's data from glance fits a different but equally important purpose: It lets you view trends of some summary statistics across values of k. of particular interest is the total within sum of squares, saved in the tot.withinss column.
+Findings from the plots: 
+
+1. Sodium and calories from fat are positively correlated and clustered in a dense cluster whereas sodium is cholesterol is constant thought out the calorie scale.
+
+2. Data always clustered around four very distinct group with rising amount of cholesterol , fat and Sodium as the calorie rises.
+
+
+
+# Conclusion
+The data is highly skewed on the right-hand side having highest frequency of items with low calorie amount. 
+As evinced by the plots one item (data point) that is on the top most right corner is the 40-piece Chicken McNuggets that is the greatest contributor to fat, cholesterol and Sodium intake.
+ After all this exploration we were able to walk always some insights regarding the Mcdonalds Menu Nutrition dataset.We learned that the best menu category to avoid at Mcdonalds if you don't want high cholesterol would be the breakfast menu in all the plots where the clusters are formed based on low to high value of cholesterol, sodium and fat.
+The plots for Sodium with respect to calories seem be clear that a MacDonald food items contributing the high amount of sodium in its big mac menu range. As an evidence above a single item that is the 40-piece Chicken McNuggets are the greatest contributor to Sodium intake.The plot shows that there are quite a handful of MacDonald's food items which contain a dangerous number of calories from saturated Fat, and one single item can contain an amount close to the one's recommended daily value of sodium, cholesterol and fat.
+
+
+
+# Datasets Cited
+I would like thank Dr.Sanchez for providing the Mcondalds Nutrition Menu dataset which I renamed Mac for this analysis.
+
+That data we used is available at:
+https://raw.githubusercontent.com/reisanar/datasets/master/macmenu.csv
+
+
